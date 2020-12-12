@@ -1,0 +1,13 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <Authors>TikoTako</Authors>
+    <Copyright>(c) 2020 TikoTako</Copyright>
+    <PackageProjectUrl>https://github.com/TikoTako/Takonsole</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/TikoTako/Takonsole</RepositoryUrl>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageTags>windows, console, colors</PackageTags>
+  </PropertyGroup>
+</Project>
