@@ -7,7 +7,17 @@
     <Copyright>(c) 2020 TikoTako</Copyright>
     <PackageProjectUrl>https://github.com/TikoTako/Takonsole</PackageProjectUrl>
     <RepositoryUrl>https://github.com/TikoTako/Takonsole</RepositoryUrl>
-    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageLicenseExpression></PackageLicenseExpression>
     <PackageTags>windows, console, colors</PackageTags>
+    <RunAnalyzersDuringBuild>false</RunAnalyzersDuringBuild>
+    <PackageLicenseFile>LICENSE</PackageLicenseFile>
+    <Description>Console with RGB colors support for windows projects.</Description>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="LICENSE">
+      <Pack>True</Pack>
+      <PackagePath></PackagePath>
+    </None>
+  </ItemGroup>
 </Project>
