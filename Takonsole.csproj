@@ -12,6 +12,7 @@
     <RunAnalyzersDuringBuild>false</RunAnalyzersDuringBuild>
     <PackageLicenseFile>LICENSE</PackageLicenseFile>
     <Description>Console with RGB colors support for windows projects.</Description>
+    <Version>1.1.0</Version>
   </PropertyGroup>
 
   <ItemGroup>

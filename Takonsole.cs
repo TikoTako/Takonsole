@@ -1,64 +1,112 @@
 ﻿using System;
+using System.IO;
 using System.Text;
 using System.Drawing;
-using System.Runtime.InteropServices;
-using System.IO;
-using Microsoft.Win32.SafeHandles;
 using System.Reflection;
+using Microsoft.Win32.SafeHandles;
+using System.Runtime.InteropServices;
+using System.Linq;
+using System.Threading.Tasks;
+
+#nullable enable
 
 namespace TikoTako
 {
     /// <summary>
-    /// Enable the console
-    /// Output different types: Normal, Informations, Warnings, Errors with different colors.
-    /// Has a lock just in case.
-    /// Has timestamp output.
-    /// 
-    /// https://docs.microsoft.com/en-us/windows/console/console-virtual-terminal-sequences
+    /// Alloc/Dealloc the Windows console.
+    /// <para>Output different types: Normal, Informations, Warnings, Errors with timestamp and a different color each.</para>
+    /// <para>Color is a System.Drawing.Color</para>
     /// </summary>
-    public class Takonsole
+    public static partial class Takonsole
     {
-        [DllImport("kernel32")] //https://docs.microsoft.com/en-us/windows/console/allocconsole
-        private static extern bool AllocConsole();
-        [DllImport("kernel32")] // https://docs.microsoft.com/en-us/windows/console/getstdhandle
-        private static extern IntPtr GetStdHandle(int nStdHandle);
-        [DllImport("kernel32")] // https://docs.microsoft.com/en-us/windows/console/setconsolemode
-        private static extern bool SetConsoleMode(IntPtr nStdHandle, uint dwMode);
+        // https://docs.microsoft.com/en-us/windows/console/console-virtual-terminal-sequences
 
         private enum OutType { Normal, Information, Warning, Error }
 
+        private const string ESC = "\x1b[{0}m";
+        // Unset [R]everse [U]nderline [B]old
+        //private readonly static string[] RUB = { F(ESC, 27), F(ESC, 24), F(ESC, 22) };
+        private readonly static string[] BUR = { F(ESC, 22), F(ESC, 24), F(ESC, 27), F(ESC, 00) };
+        // Set [B]old [U]nderline [R]everse [N]ormal
+        private readonly static string[] BURN = { F(ESC, 01), F(ESC, 04), F(ESC, 07), F(ESC, 00) };
+
         private static readonly object theLock = new object();
-        private static readonly Encoding encoding = Encoding.Default; // change this if you see random chars
+        private static bool HighLander = false; // There-will-be-only-one-joke.webm.exe
 
-        public Color NormalColor { get; set; } = Color.White;
-        public Color InformationColor { get; set; } = Color.Cyan;
-        public Color WarningColor { get; set; } = Color.Orange;
-        public Color ErrorColor { get; set; } = Color.IndianRed;
-        public Color? BackGround { get; set; } = null;
-
-        private static Takonsole HighLander = null;
-
-        private Takonsole()
+        private static Color _nC = Color.LightGray;
+        private static Color _bgC = Color.Black;
+        public static Color ErrorColor { get; set; } = Color.IndianRed;
+        public static Color WarningColor { get; set; } = Color.Orange;
+        public static Color InformationColor { get; set; } = Color.Cyan;
+        public static Color TimestampColor { get; set; } = Color.SlateGray;
+        public static Color NormalColor
         {
-            if (HighLander == null)
+            get { return _nC; }
+            set
             {
-                HighLander = this;
+                _nC = value;
+                if (HighLander) Console.Write(SetFontColor(value));
+            }
+        }
+        public static Color BackgroundColor
+        {
+            get { return _bgC; }
+            set
+            {
+                _bgC = value;
+                if (HighLander) Console.Write(SetBackgroundColor(value));
             }
         }
 
         /// <summary>
-        /// This is used instead of the constructor so it allocate only one console.
+        /// Set the console background.
+        /// <para>The method will call a CLS()</para>
+        /// <para>If you don't want to clear the screen, use the BackgroundColor property.</para>
         /// </summary>
-        /// <param name="Title">Console window title.</param>
-        /// <returns></returns>
-        public static Takonsole Alloc(string Title)
+        /// <param name="backgroundColor">The background color.</param>
+        public static void SetConsoleBackground(Color backgroundColor)
         {
-            if (HighLander == null)
+            if (!HighLander) return;
+            BackgroundColor = backgroundColor;
+            Console.Clear();
+        }
+
+        /// <summary>
+        /// Short version of String.Format(string, args[])
+        /// </summary>
+        private static string F(string str, params object?[] args) { return String.Format(str, args); }
+
+        /// <summary>
+        /// Allocate the console with default encoding.
+        /// </summary>
+        /// <param name="ConsoleWindowTitle">Title of the console window.</param>
+        /// <returns>true if the console is allocated</returns>
+        public static bool Alloc(string ConsoleWindowTitle)
+        {
+            return Alloc(ConsoleWindowTitle, Encoding.Default);
+        }
+
+        /// <summary>
+        /// Allocate the console.
+        /// <para>Can throw a TakonsoleException.</para>
+        /// </summary>
+        /// <param name="consoleWindowTitle">Title of the console window.</param>
+        /// <param name="encoding">The encoding for the output.</param>
+        /// <returns>true if the console is allocated</returns>
+        public static bool Alloc(string consoleWindowTitle, Encoding encoding)
+        {
+            if (HighLander == false)
             {
-                AllocConsole();
-                Console.Title = Title;
-                _ = new Takonsole();
-                SetConsoleMode(GetStdHandle(-11), 0x0001 | 0x0004);
+                if (!AllocConsole())
+                {
+                    throw new TakonsoleException(Marshal.GetLastWin32Error(), TakonsoleException.ErrorCode.Alloc);
+                }
+                HighLander = true;
+                Console.Title = consoleWindowTitle;
+                if (!SetConsoleMode(GetStdHandle(-11), 0x0001 | 0x0004)) // check link in dllimport for more info
+                {
+                    throw new TakonsoleException(Marshal.GetLastWin32Error(), TakonsoleException.ErrorCode.SetMode);
+                }
                 // this little crap took over nine thousand hours to find
                 // Console.OutputEncoding != Console.Out.Encoding
                 Console.OutputEncoding = encoding;
@@ -71,59 +119,138 @@ namespace TikoTako
                                                     FileAccess.Write),
                                                     encoding)
                     { AutoFlush = true });
+                GetFont();
             }
             return HighLander;
         }
 
-        public void Test()
+        /// <summary>
+        /// Set the font for the console window.
+        /// <para>Can throw a TakonsoleException.</para>
+        /// <para> The font must be:</para>
+        /// <list type="bullet">
+        /// <item>TrueType</item>
+        /// <item>fixed-pitch</item>
+        /// <item>non Italic</item>
+        /// <item>with no negative A and/or C spaces.</item>
+        /// </list>
+        /// </summary>
+        /// <param name="fontName">Font name.</param>
+        /// <param name="fontSize">Font size.</param>
+        public static void SetFont(string fontName, short? fontSize)
         {
-            string buff;
-            PropertyInfo[] arrayOfColors = (typeof(Color).GetProperties(BindingFlags.Static | BindingFlags.DeclaredOnly | BindingFlags.Public));
-            Console.WriteLine($"arrayOfColors.Length = {arrayOfColors.Length}");
-            foreach (var bColor in arrayOfColors)
+            if (!HighLander) return;
+            /* not supported
+                Console.WriteLine($"\u001b[10mFONT 1\u001b[0m");
+                Console.WriteLine($"\u001b[11mFONT 2\u001b[0m");
+                Console.WriteLine($"\u001b[15mFONT 6\u001b[0m");
+            */
+            fontInfoEx.FaceName = fontName;
+            // change the size if set, work with only Y            
+            fontInfoEx.dwFontSize.Y = (fontSize <= 0 ? fontInfoEx.dwFontSize.Y : fontSize) ?? fontInfoEx.dwFontSize.Y;
+            if (!SetCurrentConsoleFontEx(GetStdHandle(-11), false, ref fontInfoEx))
             {
-                buff = "";
-                foreach (var fColor in arrayOfColors)
-                {
-                    buff += RawPrint("#", false, (Console.CursorLeft >= Console.WindowWidth), false, Color.FromName(fColor.Name), Color.FromName(bColor.Name));
-                }
-                Console.Write(buff);
+                throw new TakonsoleException(Marshal.GetLastWin32Error(), TakonsoleException.ErrorCode.SetFont);
             }
-            RawPrintToConsole("", false, true, true, null, null);
-            ConsoleWrite("#### TEST NORMAL ####", OutType.Normal);
-            ConsoleWrite("#### TEST INFORMATION ####", OutType.Information);
-            ConsoleWrite("#### TEST WARNING ####", OutType.Warning);
-            ConsoleWrite("#### TEST ERROR ####", OutType.Error);
+            // update
+            GetFont();
+        }
+
+        public static short FontWidth { get; private set; } = 0;
+        private static FontInfoEx fontInfoEx;
+
+        private static void GetFont()
+        {
+            if (HighLander)
+            {
+                fontInfoEx = new FontInfoEx();
+                fontInfoEx.cbSize = (uint)Marshal.SizeOf(fontInfoEx);
+                // load the whole struct of current font used
+                if (!GetCurrentConsoleFontEx(GetStdHandle(-11), false, ref fontInfoEx))
+                {
+                    throw new TakonsoleException(Marshal.GetLastWin32Error(), TakonsoleException.ErrorCode.GetFont);
+                }
+                FontWidth = fontInfoEx.dwFontSize.X;
+            }
         }
 
         /// <summary>
-        /// Print out _message to the console with more control.
+        /// Remove the console.
         /// </summary>
-        /// <param name="_message">The message to print.</param>
-        /// <param name="_timeStamp">Timestamp on/off</param>
-        /// <param name="newLine">Newline on message end yes/no.</param>
-        /// <param name="resetColors">Reset the colors back to normal on text end.</param>
-        /// <param name="_char">Text color, can be null.</param>
-        /// <param name="_back">Background color, can be null.</param>
-        public void RawPrintToConsole(string _message, bool _timeStamp, bool newLine, bool resetColors, Color? _char, Color? _back)
+        public static void DeAlloc()
         {
-            lock (theLock)
+            if (HighLander)
             {
-                Console.Write(RawPrint(_message, _timeStamp, newLine, resetColors, _char, _back));
+                if (!FreeConsole())
+                {
+                    throw new TakonsoleException(Marshal.GetLastWin32Error(), TakonsoleException.ErrorCode.Free);
+                }
+                else
+                {
+                    HighLander = false;
+                }
             }
         }
 
-        private string RawPrint(string _message, bool _timeStamp, bool newLine, bool resetColors, Color? _char, Color? _back)
+        /// <summary>
+        /// Print out a test.
+        /// <para>Throw a TakonsoleException if there is no console.</para>
+        /// </summary>
+        public static void Test()
         {
-            string backColor = _back != null ? $"\u001b[48;2;{_back?.R};{_back?.G};{_back?.B}m" : String.Empty;
-            string charColor = _char != null ? $"\u001b[38;2;{_char?.R};{_char?.G};{_char?.B}m" : String.Empty;
-            string timeStamp = _timeStamp == true ? $"[{DateTime.Now.ToLocalTime()}] " : String.Empty;
-            string reset = resetColors ? /*((_char != null && _back != null) ? */"\u001b[0m"/* : String.Empty)*/ : String.Empty;
-            string happyEnding = newLine ? Environment.NewLine : String.Empty;
-            return $"{timeStamp}{backColor}{charColor}{_message}{reset}{happyEnding}";
+            if (!HighLander)
+            {
+                throw new TakonsoleException(TakonsoleException.ErrorCode.Unset);
+            }
+            //lock (theLock)
+            {
+                string buff;
+                var tmpColors = Tuple.Create(NormalColor, BackgroundColor, InformationColor, WarningColor, ErrorColor);
+                var arrayOfColors = (typeof(Color).GetProperties(BindingFlags.Static | BindingFlags.DeclaredOnly | BindingFlags.Public));
+
+                bool?[] tsF = { null, true, false };
+                foreach (var item in tsF)
+                {
+                    TimeStampFormat.dtl = item;
+                    Out("timestamped normal text");
+                    Inf("timestamped information text");
+                    Warn("timestamped warning text");
+                    Err("timestamped error text");
+                }
+
+                Enumerable.Range(0, 255).ToList().ForEach(i => Write($"#", null, Color.FromArgb(i, 0, 0), null));
+                Enumerable.Range(0, 255).Reverse().ToList().ForEach(i => Write($"#", null, Color.FromArgb(0, i, 0), null));
+                Enumerable.Range(0, 255).ToList().ForEach(i => Write($"#", null, Color.FromArgb(0, 0, i), null));
+                Enumerable.Range(0, 255).Reverse().ToList().ForEach(i => Write($"#", null, Color.FromArgb(i, i, 0), null));
+                Enumerable.Range(0, 255).ToList().ForEach(i => Write($"#", null, Color.FromArgb(i, 0, i), null));
+                Enumerable.Range(0, 255).Reverse().ToList().ForEach(i => Write($"#", null, Color.FromArgb(0, i, i), null));
+                Enumerable.Range(0, 255).ToList().ForEach(i => Write($"#", null, Color.FromArgb(i, i, i), null));
+
+                Console.WriteLine(Environment.NewLine);
+                Console.WriteLine($"Array of colors (from System.Drawing.Color) = {arrayOfColors.Length}");
+                foreach (var bColor in arrayOfColors)
+                {
+                    buff = "";
+                    foreach (var fColor in arrayOfColors)
+                    {
+                        buff += $"{SetFontColor(Color.FromName(fColor.Name))}{SetBackgroundColor(Color.FromName(bColor.Name))}#{((Console.CursorLeft == Console.WindowWidth) ? Environment.NewLine : "")}";
+                    }
+                    Console.Write(buff);
+                }
+                (NormalColor, BackgroundColor, InformationColor, WarningColor, ErrorColor) = tmpColors;
+                Console.WriteLine(Environment.NewLine);
+                Console.WriteLine($"done {SetFontColor(Color.BlueViolet)}{SetStyle(Style.Reverse)}DONE{UnSetStyle(Style.Reverse)}{SetFontColor(NormalColor)} done");
+            }
         }
 
-        private void ConsoleWrite(string str, OutType outputType)
+        /// <summary>
+        /// Print to console
+        /// <para>Text out format: "[timestamp] message"</para>
+        /// <para>Text out colors: depending on "outputType"</para>
+        /// </summary>
+        /// <param name="str">message.</param>
+        /// <param name="outputType">Type of output, the colors depend on this.</param>
+        private static void OIWE(string str, OutType outputType)
         {
             var tmpColor = outputType switch
             {
@@ -132,12 +259,98 @@ namespace TikoTako
                 OutType.Error => ErrorColor,
                 _ => NormalColor,
             };
-            RawPrintToConsole(str, true, true, true, tmpColor, BackGround);
+
+            Console.WriteLine(GenerateRawFromStructs(TimeStampFormat, new Message(str, tmpColor)));
         }
 
-        public static Action<string> Out = delegate (string str) { HighLander?.ConsoleWrite(str, OutType.Normal); };
-        public static Action<string> Inf = delegate (string str) { HighLander?.ConsoleWrite(str, OutType.Information); };
-        public static Action<string> Warn = delegate (string str) { HighLander?.ConsoleWrite(str, OutType.Warning); };
-        public static Action<string> Err = delegate (string str) { HighLander?.ConsoleWrite(str, OutType.Error); };
+        public static TimeStamp TimeStampFormat { get; set; } = new TimeStamp();
+
+        /// <summary>
+        /// Same as Console.Clear()
+        /// </summary>
+        public static void CLS() { if (HighLander) Console.Clear(); }
+
+        /// <summary>
+        /// Write to console [TimeStamp] message
+        /// <list type="bullet">
+        /// <item>Timestamp format is set by TimeStampFormat</item>
+        /// <item>Normal font style</item>
+        /// <item>Timestamp color set by TimestampColor</item>
+        /// <item>Message color set by NormalColor</item>
+        /// <item>Bacground color set by BackgroundColor</item>
+        /// </list>
+        /// </summary>
+        public static void Out(string message) { if (HighLander) OIWE(message, OutType.Normal); }
+
+        /// <summary>
+        /// Write to console [TimeStamp] message
+        /// <list type="bullet">
+        /// <item>Timestamp format is set by TimeStampFormat</item>
+        /// <item>Normal font style</item>
+        /// <item>Timestamp color set by TimestampColor</item>
+        /// <item>Message color set by InformationColor</item>
+        /// <item>Bacground color set by BackgroundColor</item>
+        /// </list>
+        /// </summary>
+        public static void Inf(string message) { if (HighLander) OIWE(message, OutType.Information); }
+
+        /// <summary>
+        /// Write to console [TimeStamp] message
+        /// <list type="bullet">
+        /// <item>Timestamp format is set by TimeStampFormat</item>
+        /// <item>Normal font style</item>
+        /// <item>Timestamp color set by TimestampColor</item>
+        /// <item>Message color set by WarningColor</item>
+        /// <item>Bacground color set by BackgroundColor</item>
+        /// </list>
+        /// </summary>
+        public static void Warn(string message) { if (HighLander) OIWE(message, OutType.Warning); }
+
+        /// <summary>
+        /// Write to console [TimeStamp] message
+        /// <list type="bullet">
+        /// <item>Timestamp format is set by TimeStampFormat</item>
+        /// <item>Normal font style</item>
+        /// <item>Timestamp color set by TimestampColor</item>
+        /// <item>Message color set by ErrorColor</item>
+        /// <item>Bacground color set by BackgroundColor</item>
+        /// </list>
+        /// </summary>
+        public static void Err(string message) { if (HighLander) OIWE(message, OutType.Error); }
+
+        /// <summary>
+        /// Same as Console.Write(string) but it check if console is allocated;
+        /// </summary>
+        public static void Write(string str) { if (HighLander) Console.Write(str); }
+
+        /// <summary>
+        /// Output "message" to the console, without the timestamp, theres no newline.
+        /// <para>Is possible to leave the parameters to null if not needed.</para>
+        /// </summary>
+        public static void Write(string str, Style? style, Color? fontColor, Color? backgroundColor)
+        {
+            if (HighLander)
+                Console.Write(GenerateRawFromString(str, style, fontColor, backgroundColor));
+        }
+
+        /// <summary>
+        /// Same as Console.WriteLine(string) but it check if console is allocated;
+        /// </summary>
+        public static void WriteLine() { if (HighLander) Console.WriteLine(); }
+
+        /// <summary>
+        /// Same as Console.WriteLine(string) but it check if console is allocated;
+        /// </summary>
+        public static void WriteLine(string str) { if (HighLander) Console.WriteLine(str); }
+
+        /// <summary>
+        /// Output "message" plus a newline to the console, without the timestamp.
+        /// <para>Is possible to leave the parameters to null if not needed.</para>
+        /// </summary>
+        public static void WriteLine(string message, Style? style, Color? fontColor, Color? backgroundColor)
+        {
+            if (HighLander)
+                Console.WriteLine(GenerateRawFromString(message, style, fontColor, backgroundColor));
+        }
     }
 }
