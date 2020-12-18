@@ -3,7 +3,7 @@
 [![NuGet version](http://img.shields.io/nuget/v/Takonsole.svg?nocache=1)](https://www.nuget.org/packages/Takonsole/)
 [![Download count](https://img.shields.io/nuget/dt/Takonsole.svg)](https://www.nuget.org/packages/takonsole/)
 ---------
-<img alt="screenshot" src="https://raw.githubusercontent.com/TikoTako/TikoTako/main/img/ss%201.png" height="300"/><br/>
+<img alt="screenshot" src="https://raw.githubusercontent.com/TikoTako/TakonsoleTest/master/screenshots/ss%20(3).png" height="300"/><br/>
 Add a console for debugging to a winform/wpf project.<br/>
 It uses the 24 bit RGB ability of the new win 10 console, there is no standard/extended/256 colors support.<br/>
 Out, Inf, Warn, Err have different colors (can be changed)<br/>
